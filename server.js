@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 5000;
 // IMPORTANT: **Before deployment, replace this with your actual Frontend URL**
 // Get the correct frontend URL based on the environment
 const FRONTEND_URL = process.env.NODE_ENV === 'production' 
-                     ? 'https://YOUR_FRONTEND_URL.netlify.app' // <<<<< REPLACE THIS with your deployed frontend URL
+                     ? 'https://kaleidoscopic-melba-8190e5.netlify.app/' // <<<<< REPLACE THIS with your deployed frontend URL
                      : 'http://localhost:3000'; // Local development URL
 
 // Use Express middleware
