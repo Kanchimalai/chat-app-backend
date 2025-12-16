@@ -18,24 +18,33 @@ const server = http.createServer(app);
 // The hosting platform (e.g., Render/Heroku) will set the PORT environment variable
 const PORT = process.env.PORT || 5000; 
 
-// IMPORTANT: **Before deployment, replace this with your actual Frontend URL**
-// Get the correct frontend URL based on the environment
-const FRONTEND_URL = process.env.NODE_ENV === 'production' 
-                     ? 'https://kaleidoscopic-melba-8190e5.netlify.app/' // <<<<< REPLACE THIS with your deployed frontend URL
-                     : 'http://localhost:3000'; // Local development URL
+// Allowed origins: configurable via environment variable for flexibility in dev/prod
+// Default includes localhost and the Netlify URL used in your frontend
+const DEFAULT_ALLOWED = 'http://localhost:3000,https://kaleidoscopic-melba-8190e5.netlify.app';
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || DEFAULT_ALLOWED)
+  .split(',')
+  .map(s => s.trim().replace(/\/$/, ''));
 
-// Use Express middleware
-app.use(cors()); // Basic CORS setup for Express routes
+// Use Express middleware with explicit CORS handling so the backend accepts
+// requests from the deployed Netlify origin as well as local dev.
+app.use(cors({
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true); // allow non-browser tools or same-origin requests
+    const originNoSlash = origin.replace(/\/$/, '');
+    if (ALLOWED_ORIGINS.includes(originNoSlash)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  }
+})); // Explicit CORS setup for Express routes
 app.use(express.json()); // Optional: allows handling of JSON payloads (not strictly needed for this chat app's simple routes)
 
 // Connect to MongoDB Atlas
 connectDB(); 
 
 // --- Socket.IO Implementation (Persistent Connection) ---
-// Initialize Socket.IO server
+// Initialize Socket.IO server with the same allowed origins
 const io = new Server(server, {
   cors: {
-    origin: FRONTEND_URL, // Use the dynamically set URL for secure connection
+    origin: ALLOWED_ORIGINS,
     methods: ["GET", "POST"]
   },
   // Optimization: Optionally configure settings for robustness
