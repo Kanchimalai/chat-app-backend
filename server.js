@@ -46,6 +46,16 @@ app.use(cors({
 })); 
 app.use(express.json()); 
 
+// HTTP logging middleware: log incoming Origin and outgoing Access-Control-Allow-Origin
+app.use((req, res, next) => {
+  const incomingOrigin = req.headers.origin || '(no origin)';
+  console.log('HTTP Incoming Origin:', incomingOrigin, req.method, req.url);
+  res.on('finish', () => {
+    console.log('HTTP Sent Access-Control-Allow-Origin:', res.get('Access-Control-Allow-Origin'), req.method, req.url);
+  });
+  next();
+});
+
 
 connectDB(); 
 
@@ -56,6 +66,17 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   },
   
+});
+
+// Socket.IO middleware to log handshake origin (useful when engine.io uses XHR polling)
+io.use((socket, next) => {
+  try {
+    const hsOrigin = socket.handshake && socket.handshake.headers && socket.handshake.headers.origin;
+    console.log('Socket handshake Origin:', hsOrigin || '(no origin)');
+  } catch (err) {
+    console.warn('Error reading socket handshake origin', err);
+  }
+  next();
 });
 
 
@@ -102,5 +123,8 @@ io.on('connection', (socket) => {
   });
 });
 
+
+// Debug: print effective allowed origins to help diagnose CORS issues
+console.log('Effective ALLOWED_ORIGINS:', ALLOWED_ORIGINS);
 
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
