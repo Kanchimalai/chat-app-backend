@@ -1,130 +1,127 @@
-
-
 const express = require('express');
 const http = require('http');
-
-const { Server } = require('socket.io'); 
+const { Server } = require('socket.io');
 const cors = require('cors');
 require('dotenv').config();
 
-
-const connectDB = require('./db'); 
-const Message = require('./models/Message'); 
+const connectDB = require('./db');
+const Message = require('./models/Message');
 
 const app = express();
 const server = http.createServer(app);
 
+const PORT = process.env.PORT || 5000;
 
-const PORT = process.env.PORT || 5000; 
+/* ================================
+   ALLOWED ORIGINS (IMPORTANT)
+================================ */
 
-
-const DEFAULT_ALLOWED = 'http://localhost:3000,https://kaleidoscopic-melba-8190e5.netlify.app';
+const DEFAULT_ALLOWED =
+  'http://localhost:3000,https://kaleidoscopic-melba-8190e5.netlify.app';
 
 const rawAllowed = (process.env.ALLOWED_ORIGINS || DEFAULT_ALLOWED)
   .split(',')
-  .map(s => s.trim())
-  .filter(Boolean);
-
-
-const ALLOWED_ORIGINS = rawAllowed
-  .map(s => s.replace(/\/$/, ''))
+  .map(s => s.trim().replace(/\/$/, ''))
+  .filter(Boolean)
   .filter(s => !/YOUR_FRONTEND_URL/i.test(s));
 
-
-if (process.env.NODE_ENV !== 'production' && !ALLOWED_ORIGINS.includes('http://localhost:3000')) {
-  ALLOWED_ORIGINS.unshift('http://localhost:3000');
+if (process.env.NODE_ENV !== 'production' && !rawAllowed.includes('http://localhost:3000')) {
+  rawAllowed.unshift('http://localhost:3000');
 }
 
+const ALLOWED_ORIGINS = rawAllowed;
+
+console.log('Effective ALLOWED_ORIGINS:', ALLOWED_ORIGINS);
+
+/* ================================
+   EXPRESS MIDDLEWARE
+================================ */
 
 app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin) return callback(null, true); 
-    const originNoSlash = origin.replace(/\/$/, '');
-    if (ALLOWED_ORIGINS.includes(originNoSlash)) return callback(null, true);
-    callback(new Error('Not allowed by CORS'));
-  }
-})); 
-app.use(express.json()); 
+  origin: ALLOWED_ORIGINS,
+  credentials: true,
+  methods: ['GET', 'POST']
+}));
 
-// HTTP logging middleware: log incoming Origin and outgoing Access-Control-Allow-Origin
+app.use(express.json());
+
+/* Debug logging */
 app.use((req, res, next) => {
-  const incomingOrigin = req.headers.origin || '(no origin)';
-  console.log('HTTP Incoming Origin:', incomingOrigin, req.method, req.url);
-  res.on('finish', () => {
-    console.log('HTTP Sent Access-Control-Allow-Origin:', res.get('Access-Control-Allow-Origin'), req.method, req.url);
-  });
+  console.log('HTTP Origin:', req.headers.origin, req.method, req.url);
   next();
 });
 
+/* ================================
+   DATABASE
+================================ */
 
-connectDB(); 
+connectDB();
 
+/* ================================
+   SOCKET.IO (FIXED)
+================================ */
 
 const io = new Server(server, {
   cors: {
     origin: ALLOWED_ORIGINS,
-    methods: ["GET", "POST"]
+    methods: ['GET', 'POST'],
+    credentials: true
   },
-  
+  transports: ['websocket', 'polling']
 });
 
-// Socket.IO middleware to log handshake origin (useful when engine.io uses XHR polling)
+/* Log socket origin */
 io.use((socket, next) => {
-  try {
-    const hsOrigin = socket.handshake && socket.handshake.headers && socket.handshake.headers.origin;
-    console.log('Socket handshake Origin:', hsOrigin || '(no origin)');
-  } catch (err) {
-    console.warn('Error reading socket handshake origin', err);
-  }
+  console.log('Socket Origin:', socket.handshake.headers.origin);
   next();
 });
 
+/* ================================
+   ROUTES
+================================ */
 
 app.get('/', (req, res) => {
   res.send('Chat Server Running');
 });
 
-
 app.get('/api/messages', async (req, res) => {
   try {
-
-    const messages = await Message.find().sort({ timestamp: 1 }).limit(50);
+    const messages = await Message.find()
+      .sort({ timestamp: 1 })
+      .limit(50);
     res.json(messages);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server Error: Failed to fetch messages');
+    console.error(err);
+    res.status(500).send('Failed to fetch messages');
   }
 });
 
+/* ================================
+   SOCKET EVENTS
+================================ */
 
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
-
+  console.log('User connected:', socket.id);
 
   socket.on('sendMessage', async (payload) => {
-    
-    
     try {
-    
       const newMessage = new Message(payload);
       await newMessage.save();
-
-      
       io.emit('receiveMessage', newMessage);
     } catch (err) {
-      console.error('Error saving message:', err);
-      
+      console.error('Message save error:', err);
     }
   });
 
-  
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
   });
 });
 
+/* ================================
+   START SERVER
+================================ */
 
-// Debug: print effective allowed origins to help diagnose CORS issues
-console.log('Effective ALLOWED_ORIGINS:', ALLOWED_ORIGINS);
-
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+server.listen(PORT, () =>
+  console.log(`🚀 Server running on port ${PORT}`)
+);
